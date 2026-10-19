@@ -33,7 +33,7 @@ type Match = {
 
 type MatchesResponse = { round: number; matches: Match[] };
 
-type Filter = 'all' | 'upcoming' | 'finished';
+type Filter = 'all' | 'upcoming' | 'finished' | 'favorites';
 
 // ---------- утилиты ----------
 
@@ -57,11 +57,17 @@ function formatStartsAt(iso: string | null): string {
   });
 }
 
-// Во «Все» показываем всё.
-// В «Предстоящие» — только scheduled (у postponed нет даты — не предстоит, а отложен).
-// В «Завершённые» — только finished (live ещё не завершён, postponed не состоялся).
-function matchesFilter(match: Match, filter: Filter): boolean {
+// «Все» — всё.
+// «Предстоящие» — только scheduled (postponed без даты — не предстоит).
+// «Завершённые» — только finished (live ещё идёт, postponed не состоялся).
+// «Избранное» — только то, что пользователь отметил звёздочкой (независимо от статуса).
+function matchesFilter(
+  match: Match,
+  filter: Filter,
+  isFavorite: (id: string) => boolean
+): boolean {
   if (filter === 'all') return true;
+  if (filter === 'favorites') return isFavorite(match.id);
   if (filter === 'upcoming') return match.status === 'scheduled';
   return match.status === 'finished';
 }
@@ -132,6 +138,7 @@ function FilterBar({
     { key: 'all', label: 'Все' },
     { key: 'upcoming', label: 'Предстоящие' },
     { key: 'finished', label: 'Завершённые' },
+    { key: 'favorites', label: 'Избранное' },
   ];
   return (
     <View style={styles.filterBar}>
@@ -171,7 +178,7 @@ export function MatchesScreen() {
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const requestIdRef = useRef(0);
 
-  const { isFavorite, toggle } = useFavorites();
+  const { favorites, isFavorite, toggle } = useFavorites();
 
   const load = useCallback(async (mode: 'initial' | 'refresh') => {
     const requestId = ++requestIdRef.current;
@@ -212,8 +219,8 @@ export function MatchesScreen() {
 
   const filtered = useMemo(() => {
     if (!data) return [];
-    return data.matches.filter((m) => matchesFilter(m, filter));
-  }, [data, filter]);
+    return data.matches.filter((m) => matchesFilter(m, filter, isFavorite));
+  }, [data, filter, isFavorite]);
 
   // --- состояния экрана ---
 
@@ -266,6 +273,8 @@ export function MatchesScreen() {
     );
   }
 
+  const isFavoritesEmpty = filter === 'favorites' && favorites.length === 0;
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Матчи тура</Text>
@@ -281,7 +290,7 @@ export function MatchesScreen() {
       <FlatList
         data={filtered}
         keyExtractor={(m) => m.id}
-        extraData={isFavorite}
+        extraData={favorites}
         renderItem={({ item }) => (
           <MatchCard
             match={item}
@@ -298,13 +307,22 @@ export function MatchesScreen() {
         }
         ListEmptyComponent={
           <View style={styles.emptyBox}>
-            <Text style={styles.emptyTitle}>Нет матчей в этой категории</Text>
+            <Text style={styles.emptyTitle}>
+              {filter === 'favorites'
+                ? 'В избранном пока пусто'
+                : 'Нет матчей в этой категории'}
+            </Text>
             <Text style={styles.muted}>
-              Попробуйте другой фильтр или потяните вниз, чтобы обновить.
+              {filter === 'favorites'
+                ? 'Нажмите на звёздочку рядом с матчем, чтобы сохранить его здесь.'
+                : 'Попробуйте другой фильтр или потяните вниз, чтобы обновить.'}
             </Text>
           </View>
         }
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          isFavoritesEmpty && styles.listContentEmpty,
+        ]}
       />
     </View>
   );
@@ -323,7 +341,7 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 24, fontWeight: '700', marginBottom: 12 },
 
-  filterBar: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  filterBar: { flexDirection: 'row', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
   filterChip: {
     paddingVertical: 6,
     paddingHorizontal: 12,
@@ -337,6 +355,7 @@ const styles = StyleSheet.create({
   updatedRow: { marginBottom: 8 },
 
   listContent: { paddingBottom: 24 },
+  listContentEmpty: { flexGrow: 1, justifyContent: 'center' },
   separator: { height: 8 },
 
   card: {
