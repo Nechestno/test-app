@@ -10,7 +10,9 @@ import {
 } from 'react-native';
 
 import { MATCHES_URL } from '../config';
+import { FavoriteButton } from '../components/FavoriteButton';
 import { UpdatedAgo } from '../components/UpdatedAgo';
+import { useFavorites } from '../hooks/useFavorites';
 
 // ---------- типы ----------
 
@@ -66,7 +68,15 @@ function matchesFilter(match: Match, filter: Filter): boolean {
 
 // ---------- компоненты ----------
 
-function MatchCard({ match }: { match: Match }) {
+function MatchCard({
+  match,
+  isFavorite,
+  onToggleFavorite,
+}: {
+  match: Match;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
+}) {
   const statusLabel = STATUS_LABEL[match.status] ?? match.status;
   const isLive = match.status === 'live';
 
@@ -76,13 +86,16 @@ function MatchCard({ match }: { match: Match }) {
         <Text style={styles.teams} numberOfLines={2}>
           {match.home.name} — {match.away.name}
         </Text>
-        {match.score ? (
-          <Text style={[styles.score, isLive && styles.scoreLive]}>
-            {match.score.home}:{match.score.away}
-          </Text>
-        ) : (
-          <Text style={styles.scorePlaceholder}>—</Text>
-        )}
+        <View style={styles.rightCol}>
+          {match.score ? (
+            <Text style={[styles.score, isLive && styles.scoreLive]}>
+              {match.score.home}:{match.score.away}
+            </Text>
+          ) : (
+            <Text style={styles.scorePlaceholder}>—</Text>
+          )}
+          <FavoriteButton active={isFavorite} onPress={onToggleFavorite} />
+        </View>
       </View>
 
       <Text style={styles.date}>{formatStartsAt(match.startsAt)}</Text>
@@ -157,6 +170,8 @@ export function MatchesScreen() {
   const [filter, setFilter] = useState<Filter>('all');
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const requestIdRef = useRef(0);
+
+  const { isFavorite, toggle } = useFavorites();
 
   const load = useCallback(async (mode: 'initial' | 'refresh') => {
     const requestId = ++requestIdRef.current;
@@ -259,14 +274,21 @@ export function MatchesScreen() {
 
       {lastUpdated !== null && (
         <View style={styles.updatedRow}>
-          <UpdatedAgo since={lastUpdated} />
+          <UpdatedAgo since={new Date(lastUpdated)} />
         </View>
       )}
 
       <FlatList
         data={filtered}
         keyExtractor={(m) => m.id}
-        renderItem={({ item }) => <MatchCard match={item} />}
+        extraData={isFavorite}
+        renderItem={({ item }) => (
+          <MatchCard
+            match={item}
+            isFavorite={isFavorite(item.id)}
+            onToggleFavorite={() => toggle(item.id)}
+          />
+        )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         refreshControl={
           <RefreshControl
@@ -332,6 +354,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   teams: { flex: 1, fontSize: 16, fontWeight: '600' },
+  rightCol: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   score: { fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] },
   scoreLive: { color: '#c0392b' },
   scorePlaceholder: { fontSize: 20, fontWeight: '700', color: '#9aa0a6' },
